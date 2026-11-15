@@ -251,8 +251,13 @@ class TestSocialLogin:
     def test_unconfigured_provider_explains_itself(self, anon_client):
         """With no credentials it bounces back to the UI with a message rather
         than sending the user to a broken consent screen."""
-        response = anon_client.get("/api/login/meta", follow_redirects=False)
-        assert "META_APP_ID" in response.headers["location"]
+        response = anon_client.get("/api/login/google", follow_redirects=False)
+        assert "GOOGLE_CLIENT_ID" in response.headers["location"]
+
+    def test_there_is_no_facebook_sign_in(self, anon_client):
+        """Removed deliberately: the Meta app has the publishing use cases and
+        not the authentication one, so Meta rejects the email scope."""
+        assert anon_client.get("/api/login/meta").status_code == 404
 
     def test_a_social_account_has_no_usable_password(self, tmp_path):
         from cryptography.fernet import Fernet

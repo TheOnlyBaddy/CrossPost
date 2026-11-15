@@ -1,14 +1,14 @@
-"""Sign in with Google or with Facebook.
+"""Sign in with Google.
 
-Separate from the OAuth in auth.py, which is about *publishing*: these flows
-ask only for an identity and never store a token. The account is matched on
-the verified email the provider returns, so signing in with Google and later
-with Facebook on the same address lands in the same account.
+Separate from the OAuth in auth.py, which is about *publishing*: this flow
+asks only for an identity and never stores a token. The account is matched on
+the verified email Google returns.
 
-Both are gated by the provider's own review state: the Google app is in
-Testing, so only listed test users can sign in, and the Meta app is in
-Development, so only people with a role on it can. That is a console setting,
-not something this code can route around.
+There is deliberately no "sign in with Facebook". The Meta app carries the two
+publishing use cases (Pages and Instagram) and not the authentication one, so
+Meta rejects `email` as an invalid scope. Facebook sign-in would only duplicate
+two sign-in methods that already work; Meta publishing is unaffected and lives
+in auth.py.
 """
 
 import logging
@@ -36,7 +36,6 @@ GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 # Identity only. No youtube.upload here: connecting a channel is a separate,
 # later decision, and asking for upload rights just to log in is rude.
 GOOGLE_LOGIN_SCOPES = ["openid", "email", "profile"]
-META_LOGIN_SCOPES = ["public_profile", "email"]
 
 _PENDING: dict[str, float] = {}
 _STATE_TTL_S = 600
@@ -151,78 +150,3 @@ def google_callback(
             error="Google sign-in: that account has no verified email"
         )
     return _sign_in(profile["email"], "google")
-
-
-# --- Meta --------------------------------------------------------------
-
-
-@router.get("/meta")
-def meta_start() -> RedirectResponse:
-    settings = get_settings()
-    if not settings.meta_configured:
-        return _back_to_frontend(
-            error="Facebook sign-in is unavailable: META_APP_ID / "
-            "META_APP_SECRET are not set"
-        )
-    params = {
-        "client_id": settings.meta_app_id,
-        "redirect_uri": _redirect_uri("/api/login/meta/callback"),
-        "response_type": "code",
-        "scope": ",".join(META_LOGIN_SCOPES),
-        "state": _issue_state(),
-    }
-    return RedirectResponse(
-        f"https://www.facebook.com/{settings.graph_api_version}/dialog/oauth"
-        f"?{urlencode(params)}"
-    )
-
-
-@router.get("/meta/callback")
-def meta_callback(
-    code: str | None = None,
-    state: str = "",
-    error: str | None = None,
-    error_description: str | None = None,
-) -> RedirectResponse:
-    if error:
-        return _back_to_frontend(
-            error=f"Facebook sign-in: {error_description or error}"
-        )
-    if not code or not _consume_state(state):
-        return _back_to_frontend(error="Facebook sign-in: invalid or expired state")
-
-    settings = get_settings()
-    base = f"https://graph.facebook.com/{settings.graph_api_version}"
-    with httpx.Client(timeout=30) as client:
-        token_resp = client.get(
-            f"{base}/oauth/access_token",
-            params={
-                "client_id": settings.meta_app_id,
-                "client_secret": settings.meta_app_secret,
-                "redirect_uri": _redirect_uri("/api/login/meta/callback"),
-                "code": code,
-            },
-        )
-        if token_resp.status_code >= 400:
-            log.warning("Meta login token exchange failed: %s", token_resp.text)
-            return _back_to_frontend(error="Facebook sign-in: token exchange failed")
-
-        me = client.get(
-            f"{base}/me",
-            params={
-                "fields": "id,name,email",
-                "access_token": token_resp.json()["access_token"],
-            },
-        )
-        if me.status_code >= 400:
-            return _back_to_frontend(error="Facebook sign-in: could not read profile")
-
-    profile = me.json()
-    if not profile.get("email"):
-        # Facebook omits it when the account has no confirmed address, or the
-        # email permission was declined on the consent screen.
-        return _back_to_frontend(
-            error="Facebook sign-in: no email came back, so there is nothing to "
-            "match an account on. Sign in with an email and password instead."
-        )
-    return _sign_in(profile["email"], "facebook")

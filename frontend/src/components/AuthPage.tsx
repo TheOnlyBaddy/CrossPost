@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { ApiError, logIn, signUp } from "../api";
-import { GoogleIcon, PlatformIcon } from "./icons";
+import { GoogleIcon } from "./icons";
 
 /**
  * Sign in or create an account. One form, two modes — they ask for the same
@@ -12,7 +12,7 @@ export function AuthPage({
   setup,
 }: {
   onSignedIn: () => void;
-  setup: { youtubeCredentials: boolean; metaCredentials: boolean };
+  setup: { youtubeCredentials: boolean };
 }) {
   const [mode, setMode] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
@@ -78,13 +78,6 @@ export function AuthPage({
           >
             <GoogleIcon />
             Continue with Google
-          </a>
-          <a
-            className={`btn btn-block ${setup.metaCredentials ? "" : "disabled"}`}
-            href={setup.metaCredentials ? "/api/login/meta" : undefined}
-          >
-            <PlatformIcon platform="facebook" small />
-            Continue with Facebook
           </a>
         </div>
 
