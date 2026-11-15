@@ -28,32 +28,47 @@ you rely on it.
 - Node 20+
 - ffmpeg/ffprobe on PATH (optional, but it is what checks codecs server-side)
 
-## Setup
+## Setup and running
+
+One command. It installs whatever is missing first — the virtualenv and the
+backend requirements, the frontend's `node_modules`, and Node or cloudflared
+through winget — then starts the Cloudflare tunnel, the backend and the
+frontend together:
 
 ```bash
-cd backend && py -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.txt
+py scripts/dev.py
 ```
 
-`backend/.env` already exists with a generated `TOKEN_ENCRYPTION_KEY`. Fill in
-the rest from `backend/.env.example`.
+The tunnel comes up first, because a quick tunnel gets a new hostname every
+run and the backend reads `PUBLIC_BASE_URL` once at import. The script writes
+the new hostname into `backend/.env` before starting the backend, then prints
+the four redirect URIs to paste into the Google and Meta consoles. Ctrl+C
+stops everything it started.
+
+Any piece on its own:
 
 ```bash
-cd frontend && npm install
+py scripts/dev.py backend
 ```
-
-## Running
-
-Backend (port 8000):
 
 ```bash
-cd backend && ./.venv/Scripts/python.exe -m uvicorn app.main:app --reload --port 8000
+py scripts/dev.py frontend
 ```
-
-Frontend (port 5173, proxies `/api` and `/media` to the backend):
 
 ```bash
-cd frontend && npm run dev
+py scripts/dev.py tunnel
 ```
+
+`--no-tunnel` runs the backend and frontend only, `--port` moves the backend
+off 8000, and `setup` installs everything without starting anything:
+
+```bash
+py scripts/dev.py setup
+```
+
+On a clean clone `backend/.env` is created from `backend/.env.example` with a
+freshly generated `TOKEN_ENCRYPTION_KEY`. Fill in `GOOGLE_*` and `META_*`
+before connecting an account.
 
 Then open http://localhost:5173. The app's Setup panel tells you what is still
 missing. API docs are at http://localhost:8000/docs.
@@ -61,8 +76,10 @@ missing. API docs are at http://localhost:8000/docs.
 Tests:
 
 ```bash
-cd backend && ./.venv/Scripts/python.exe -m pytest -q
+backend/.venv/Scripts/python.exe -m pytest backend/tests -q
 ```
+
+Deploying to Render and Vercel: see [DEPLOY.md](DEPLOY.md).
 
 ## The two things that will bite you
 

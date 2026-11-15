@@ -1,6 +1,8 @@
 """Sign-up, sign-in, and the thing that actually matters once there is more
 than one account: that one user cannot see or touch another user's work."""
 
+import mongomock
+
 from app.passwords import hash_password, verify_password
 from app.store import Store
 
@@ -100,7 +102,7 @@ class TestIsolation:
     def _two_users(self, tmp_path) -> tuple[Store, str, str]:
         from cryptography.fernet import Fernet
 
-        store = Store(tmp_path / "iso.sqlite3", Fernet.generate_key().decode())
+        store = Store("mongodb://test", "test", Fernet.generate_key().decode(), client=mongomock.MongoClient())
         alice = store.create_user("alice@example.com", "x")
         bob = store.create_user("bob@example.com", "x")
         return store, alice, bob
@@ -182,7 +184,7 @@ class TestAdoption:
 
         from app.models import Platform
 
-        store = Store(tmp_path / "adopt.sqlite3", Fernet.generate_key().decode())
+        store = Store("mongodb://test", "test", Fernet.generate_key().decode(), client=mongomock.MongoClient())
         store.save_account(
             "",
             Platform.YOUTUBE,
@@ -202,7 +204,7 @@ class TestAdoption:
 
         from app.models import Platform
 
-        store = Store(tmp_path / "adopt2.sqlite3", Fernet.generate_key().decode())
+        store = Store("mongodb://test", "test", Fernet.generate_key().decode(), client=mongomock.MongoClient())
         store.save_account(
             "", Platform.YOUTUBE, external_id="UC1", display_name="L", access_token="t"
         )
@@ -258,7 +260,7 @@ class TestSocialLogin:
         from app.passwords import UNUSABLE_PASSWORD, verify_password
         from app.store import Store
 
-        store = Store(tmp_path / "social.sqlite3", Fernet.generate_key().decode())
+        store = Store("mongodb://test", "test", Fernet.generate_key().decode(), client=mongomock.MongoClient())
         store.create_user("viagoogle@example.com", UNUSABLE_PASSWORD)
 
         user = store.get_user_by_email("viagoogle@example.com")
@@ -274,7 +276,7 @@ class TestSocialLogin:
         from app.passwords import UNUSABLE_PASSWORD
         from app.store import Store
 
-        store = Store(tmp_path / "same.sqlite3", Fernet.generate_key().decode())
+        store = Store("mongodb://test", "test", Fernet.generate_key().decode(), client=mongomock.MongoClient())
         first = store.create_user("both@example.com", UNUSABLE_PASSWORD)
 
         assert store.create_user("both@example.com", UNUSABLE_PASSWORD) is None
@@ -286,6 +288,6 @@ class TestSocialLogin:
         from app.passwords import UNUSABLE_PASSWORD
         from app.store import Store
 
-        store = Store(tmp_path / "case.sqlite3", Fernet.generate_key().decode())
+        store = Store("mongodb://test", "test", Fernet.generate_key().decode(), client=mongomock.MongoClient())
         user_id = store.create_user("Mixed@Example.com", UNUSABLE_PASSWORD)
         assert store.get_user_by_email("mixed@example.com")["id"] == user_id

@@ -1,7 +1,7 @@
-import sqlite3
 from datetime import datetime, timedelta, timezone
 
 import pytest
+import mongomock
 from cryptography.fernet import Fernet
 
 from app.models import Platform, PublishResult, TargetState
@@ -10,7 +10,7 @@ from app.store import Store, to_utc_iso
 
 @pytest.fixture
 def store(tmp_path) -> Store:
-    return Store(tmp_path / "test.sqlite3", Fernet.generate_key().decode())
+    return Store("mongodb://test", "test", Fernet.generate_key().decode(), client=mongomock.MongoClient())
 
 
 class TestAccountTokens:
@@ -37,10 +37,9 @@ class TestAccountTokens:
             access_token="at-secret",
             refresh_token="rt-secret",
         )
-        raw = sqlite3.connect(store.db_path).execute(
-            "SELECT access_token, refresh_token FROM accounts"
-        ).fetchone()
-        blob = raw[0] + raw[1]
+        # Straight out of the collection, with no decryption on the way.
+        raw = store.accounts.find_one({"user_id": "user-1"})
+        blob = bytes(raw["access_token"]) + bytes(raw["refresh_token"])
         assert b"at-secret" not in blob
         assert b"rt-secret" not in blob
 
@@ -68,7 +67,10 @@ class TestAccountTokens:
         assert account["refresh_token"] == "rt1"
 
     def test_unreadable_token_reads_as_disconnected(self, tmp_path):
-        store = Store(tmp_path / "db.sqlite3", Fernet.generate_key().decode())
+        # One database, two keys: the second Store has to read what the first
+        # one wrote, so they share a client.
+        shared = mongomock.MongoClient()
+        store = Store("mongodb://test", "test", Fernet.generate_key().decode(), client=shared)
         store.save_account(
             "user-1",
             Platform.YOUTUBE,
@@ -78,11 +80,11 @@ class TestAccountTokens:
             refresh_token="rt",
         )
         # Simulate a rotated key rather than crashing the request.
-        rotated = Store(tmp_path / "db.sqlite3", Fernet.generate_key().decode())
+        rotated = Store("mongodb://test", "test", Fernet.generate_key().decode(), client=shared)
         assert rotated.get_account("user-1", Platform.YOUTUBE)["access_token"] is None
 
     def test_missing_key_raises_a_useful_error(self, tmp_path):
-        store = Store(tmp_path / "db.sqlite3", "")
+        store = Store("mongodb://test", "test", "", client=mongomock.MongoClient())
         with pytest.raises(RuntimeError, match="TOKEN_ENCRYPTION_KEY"):
             store.save_account(
                 "user-1",

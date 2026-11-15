@@ -11,7 +11,9 @@ from .store import Store
 def get_store() -> Store:
     settings = get_settings()
     settings.ensure_dirs()
-    return Store(settings.db_path, settings.token_encryption_key)
+    return Store(
+        settings.mongo_url, settings.mongo_db, settings.token_encryption_key
+    )
 
 
 @lru_cache

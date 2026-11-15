@@ -110,9 +110,25 @@ export default function App() {
         : { tone: "live", text: "Ready" };
 
   if (health === null) {
+    // An endless skeleton is indistinguishable from a blank page, and this is
+    // exactly when something is wrong, so say what.
     return (
       <main className="layout">
-        <div className="skeleton" />
+        {error ? (
+          <div className="card card-body">
+            <h1 style={{ fontSize: 16 }}>Cannot reach the backend</h1>
+            <p className="hint">{error}</p>
+            <button
+              className="btn btn-primary"
+              style={{ justifySelf: "start" }}
+              onClick={() => void refresh()}
+            >
+              Try again
+            </button>
+          </div>
+        ) : (
+          <div className="skeleton" />
+        )}
       </main>
     );
   }

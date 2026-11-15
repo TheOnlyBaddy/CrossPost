@@ -7,7 +7,14 @@ directory), so these have to be set here rather than in a fixture.
 import os
 import tempfile
 
+import mongomock
+import pymongo
 from cryptography.fernet import Fernet
+
+# store.py does `from pymongo import MongoClient` at import time, and that
+# import happens when the app is first imported inside a fixture below — after
+# this line. So the app ends up on an in-memory Mongo with no server to run.
+pymongo.MongoClient = mongomock.MongoClient
 
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="crosspost-test-")
 os.environ["TOKEN_ENCRYPTION_KEY"] = Fernet.generate_key().decode()

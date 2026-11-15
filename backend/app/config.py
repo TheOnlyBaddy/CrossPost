@@ -20,6 +20,11 @@ class Settings(BaseSettings):
 
     token_encryption_key: str = ""
 
+    # MongoDB. The default is a local server; in production this is an Atlas
+    # connection string.
+    mongo_url: str = "mongodb://localhost:27017"
+    mongo_db: str = "crosspost"
+
     google_client_id: str = ""
     google_client_secret: str = ""
     meta_app_id: str = ""
@@ -53,9 +58,6 @@ class Settings(BaseSettings):
     def media_dir(self) -> Path:
         return self.data_dir / "media"
 
-    @property
-    def db_path(self) -> Path:
-        return self.data_dir / "crosspost.sqlite3"
 
     @property
     def youtube_configured(self) -> bool:

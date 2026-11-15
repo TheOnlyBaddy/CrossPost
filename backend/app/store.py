@@ -1,12 +1,18 @@
-"""SQLite persistence. Tokens are encrypted at rest with Fernet.
+"""Everything that is written down: users, sessions, connected accounts, posts.
 
-v1 holds at most one connected account per platform, which is why `accounts`
-is keyed on platform alone. Multiple accounts per platform is a v2 feature.
+MongoDB, one collection per thing. The shapes the rest of the app sees are
+unchanged from the SQLite version that came before — same method signatures,
+same dicts out — so routers, publishers and the scheduler did not have to
+learn anything about the move.
+
+Timestamps are stored as the canonical UTC ISO strings produced by
+`to_utc_iso`, because fixed-width ISO sorts lexicographically in the same
+order it sorts chronologically, and the scheduler compares them directly.
 """
 
 import json
+import re
 import secrets
-import sqlite3
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -14,72 +20,17 @@ from pathlib import Path
 from typing import Iterator
 
 from cryptography.fernet import Fernet, InvalidToken
+from pymongo import ASCENDING, DESCENDING, MongoClient, ReturnDocument
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from .models import Platform, PublishResult, TargetState
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
-    id            TEXT PRIMARY KEY,
-    email         TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    password_hash TEXT NOT NULL,
-    created_at    TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS sessions (
-    token      TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE TABLE IF NOT EXISTS accounts (
-    user_id       TEXT NOT NULL,
-    platform      TEXT NOT NULL,
-    external_id   TEXT,
-    display_name  TEXT,
-    access_token  BLOB,
-    refresh_token BLOB,
-    expires_at    TEXT,
-    extra         TEXT NOT NULL DEFAULT '{}',
-    updated_at    TEXT NOT NULL,
-    PRIMARY KEY (user_id, platform)
-);
-
-CREATE TABLE IF NOT EXISTS posts (
-    id           TEXT PRIMARY KEY,
-    user_id      TEXT NOT NULL DEFAULT '',
-    created_at   TEXT NOT NULL,
-    scheduled_at TEXT NOT NULL,
-    canceled_at  TEXT,
-    title        TEXT NOT NULL,
-    caption      TEXT NOT NULL,
-    filename     TEXT NOT NULL,
-    media_path   TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_posts_scheduled_at ON posts(scheduled_at);
-
-CREATE TABLE IF NOT EXISTS post_targets (
-    post_id     TEXT NOT NULL,
-    platform    TEXT NOT NULL,
-    state       TEXT NOT NULL,
-    url         TEXT,
-    external_id TEXT,
-    error       TEXT,
-    raw         TEXT,
-    updated_at  TEXT NOT NULL,
-    PRIMARY KEY (post_id, platform),
-    FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
-);
-"""
 
 
 def to_utc_iso(moment: datetime) -> str:
     """One canonical timestamp format.
 
-    Fixed-width UTC ISO, so lexicographic string comparison in SQL is also
-    chronological comparison. Everything written to the database goes through
-    here; naive datetimes are assumed to be UTC.
+    Fixed-width UTC ISO, so lexicographic string comparison in a query is also
+    chronological comparison.
     """
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=timezone.utc)
@@ -90,176 +41,186 @@ def _now() -> str:
     return to_utc_iso(datetime.now(timezone.utc))
 
 
+def _hide_password(url: str) -> str:
+    """Connection strings carry credentials, and this one ends up in logs."""
+    return re.sub(r"://[^@/]+@", "://***@", url)
+
+
 class Store:
-    def __init__(self, db_path: Path, encryption_key: str) -> None:
-        self.db_path = db_path
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(
+        self,
+        mongo_url: str,
+        db_name: str,
+        encryption_key: str,
+        client: MongoClient | None = None,
+    ) -> None:
+        # `client` is for tests, which pass a mongomock client rather than
+        # standing up a real server.
+        self._client = client or MongoClient(
+            mongo_url,
+            tz_aware=False,
+            # Default is 30s. A wrong or unreachable MONGO_URL should say so
+            # quickly rather than hanging the startup.
+            serverSelectionTimeoutMS=5000,
+        )
+        self._db = self._client[db_name]
         self._encryption_key = encryption_key
-        self._fernet: Fernet | None = None
-        with self.connect() as conn:
-            conn.executescript(SCHEMA)
-            self._migrate(conn)
+        try:
+            self._ensure_indexes()
+        except PyMongoError as exc:
+            raise RuntimeError(
+                f"Cannot reach MongoDB at {_hide_password(mongo_url)} - {exc.__class__.__name__}. "
+                "Check MONGO_URL in backend/.env, and that your IP is allowed "
+                "in the Atlas cluster's Network Access list."
+            ) from exc
 
-    @staticmethod
-    def _migrate(conn: sqlite3.Connection) -> None:
-        """Additive migrations for databases created before a column existed.
+    @property
+    def users(self):
+        return self._db.users
 
-        SQLite has no ADD COLUMN IF NOT EXISTS, so check first.
-        """
-        account_columns = {
-            row["name"] for row in conn.execute("PRAGMA table_info(accounts)")
-        }
-        if account_columns and "user_id" not in account_columns:
-            # The primary key changes from (platform) to (user_id, platform),
-            # which SQLite cannot ALTER, so the table is rebuilt. Existing rows
-            # are kept with an empty owner and handed to the first account that
-            # signs up — losing a working OAuth token is worse than the extra
-            # few lines here.
-            conn.execute("ALTER TABLE accounts RENAME TO accounts_pre_users")
-            conn.executescript(SCHEMA)
-            conn.execute(
-                """
-                INSERT INTO accounts (user_id, platform, external_id, display_name,
-                                      access_token, refresh_token, expires_at,
-                                      extra, updated_at)
-                SELECT '', platform, external_id, display_name, access_token,
-                       refresh_token, expires_at, extra, updated_at
-                  FROM accounts_pre_users
-                """
-            )
-            conn.execute("DROP TABLE accounts_pre_users")
+    @property
+    def sessions(self):
+        return self._db.sessions
 
-        columns = {row["name"] for row in conn.execute("PRAGMA table_info(posts)")}
-        if "user_id" not in columns:
-            conn.execute(
-                "ALTER TABLE posts ADD COLUMN user_id TEXT NOT NULL DEFAULT ''"
-            )
-        if "scheduled_at" not in columns:
-            # Existing rows were published immediately, so their schedule time
-            # is their creation time.
-            conn.execute("ALTER TABLE posts ADD COLUMN scheduled_at TEXT NOT NULL DEFAULT ''")
-            conn.execute("UPDATE posts SET scheduled_at = created_at WHERE scheduled_at = ''")
-        if "canceled_at" not in columns:
-            conn.execute("ALTER TABLE posts ADD COLUMN canceled_at TEXT")
+    @property
+    def accounts(self):
+        return self._db.accounts
 
-    # --- encryption -----------------------------------------------------
+    @property
+    def posts(self):
+        return self._db.posts
+
+    @property
+    def targets(self):
+        return self._db.post_targets
+
+    def _ensure_indexes(self) -> None:
+        # Unique on the lowercased email, which is how SQLite's COLLATE NOCASE
+        # behaved: one account per address, whatever its capitalisation.
+        self.users.create_index("email_key", unique=True)
+        self.accounts.create_index([("user_id", ASCENDING), ("platform", ASCENDING)])
+        self.posts.create_index([("user_id", ASCENDING), ("created_at", DESCENDING)])
+        self.posts.create_index("scheduled_at")
+        self.targets.create_index([("post_id", ASCENDING), ("platform", ASCENDING)])
+        self.targets.create_index("state")
+
+    # --- token encryption ------------------------------------------------
 
     @property
     def fernet(self) -> Fernet:
-        if self._fernet is None:
-            if not self._encryption_key:
-                raise RuntimeError(
-                    "TOKEN_ENCRYPTION_KEY is not set, so OAuth tokens cannot be "
-                    "stored. Generate one with: py -c \"from cryptography.fernet "
-                    "import Fernet; print(Fernet.generate_key().decode())\""
-                )
-            self._fernet = Fernet(self._encryption_key.encode())
-        return self._fernet
+        if not self._encryption_key:
+            raise RuntimeError(
+                "TOKEN_ENCRYPTION_KEY is not set, so tokens cannot be stored. "
+                "Generate one with: "
+                'py -c "from cryptography.fernet import Fernet; '
+                'print(Fernet.generate_key().decode())"'
+            )
+        return Fernet(self._encryption_key.encode())
 
     def _encrypt(self, value: str | None) -> bytes | None:
-        return self.fernet.encrypt(value.encode()) if value else None
+        return self.fernet.encrypt(value.encode()) if value is not None else None
 
     def _decrypt(self, value: bytes | None) -> str | None:
-        if not value:
+        if value is None:
             return None
         try:
-            return self.fernet.decrypt(value).decode()
+            return self.fernet.decrypt(bytes(value)).decode()
         except InvalidToken:
-            # Key rotated or corrupted — treat as "not connected" rather than
-            # crashing the request.
+            # The key changed. Treat it as disconnected rather than crashing:
+            # reconnecting the account is the only real fix anyway.
             return None
-
-    # --- plumbing -------------------------------------------------------
 
     @contextmanager
-    def connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
-        try:
-            yield conn
-            conn.commit()
-        finally:
-            conn.close()
-
-    # --- accounts -------------------------------------------------------
+    def connect(self) -> Iterator["Store"]:
+        """Kept so callers written against the old API still read naturally."""
+        yield self
 
     @staticmethod
     def _account_key(platform: "Platform | str") -> str:
-        """The `accounts` table key. Usually a Platform, but the interim Meta
-        user token is parked under a plain string key."""
+        """The `accounts` key. Usually a Platform, but the interim Meta user
+        token is parked under a plain string key."""
         return platform.value if isinstance(platform, Platform) else platform
 
-    # --- users and sessions ---------------------------------------------
+    # --- users and sessions ----------------------------------------------
 
     def create_user(self, email: str, password_hash: str) -> str | None:
         """Returns the new user id, or None if the email is already taken."""
         user_id = uuid.uuid4().hex
         try:
-            with self.connect() as conn:
-                conn.execute(
-                    "INSERT INTO users (id, email, password_hash, created_at)"
-                    " VALUES (?, ?, ?, ?)",
-                    (user_id, email.strip(), password_hash, _now()),
-                )
-        except sqlite3.IntegrityError:
+            self.users.insert_one(
+                {
+                    "_id": user_id,
+                    "email": email.strip(),
+                    "email_key": email.strip().lower(),
+                    "password_hash": password_hash,
+                    "created_at": _now(),
+                }
+            )
+        except DuplicateKeyError:
             return None
         return user_id
 
     def get_user_by_email(self, email: str) -> dict | None:
-        with self.connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM users WHERE email = ?", (email.strip(),)
-            ).fetchone()
-        return dict(row) if row else None
+        doc = self.users.find_one({"email_key": email.strip().lower()})
+        return self._user_dict(doc, with_hash=True) if doc else None
 
     def get_user(self, user_id: str) -> dict | None:
-        with self.connect() as conn:
-            row = conn.execute(
-                "SELECT id, email, created_at FROM users WHERE id = ?", (user_id,)
-            ).fetchone()
-        return dict(row) if row else None
+        doc = self.users.find_one({"_id": user_id})
+        return self._user_dict(doc) if doc else None
+
+    @staticmethod
+    def _user_dict(doc: dict, with_hash: bool = False) -> dict:
+        out = {
+            "id": doc["_id"],
+            "email": doc["email"],
+            "created_at": doc["created_at"],
+        }
+        if with_hash:
+            out["password_hash"] = doc["password_hash"]
+        return out
 
     def count_users(self) -> int:
-        with self.connect() as conn:
-            return conn.execute("SELECT COUNT(*) AS n FROM users").fetchone()["n"]
+        return self.users.count_documents({})
 
     def adopt_unowned_accounts(self, user_id: str) -> int:
-        """Hand connections made before sign-up existed to their first owner."""
-        with self.connect() as conn:
-            cursor = conn.execute(
-                "UPDATE accounts SET user_id = ? WHERE user_id = ''", (user_id,)
-            )
-            conn.execute(
-                "UPDATE posts SET user_id = ? WHERE user_id = ''", (user_id,)
-            )
-            return cursor.rowcount
+        """Hand connections made before sign-up existed to their first owner.
+
+        The account key is "<user_id>:<platform>" and Mongo cannot update an
+        _id, so each one is re-inserted under its new key rather than edited
+        in place.
+        """
+        adopted = 0
+        for doc in list(self.accounts.find({"user_id": ""})):
+            old_id = doc["_id"]
+            doc["_id"] = f"{user_id}:{doc['platform']}"
+            doc["user_id"] = user_id
+            self.accounts.delete_one({"_id": old_id})
+            self.accounts.insert_one(doc)
+            adopted += 1
+
+        self.posts.update_many({"user_id": ""}, {"$set": {"user_id": user_id}})
+        return adopted
 
     def create_session(self, user_id: str) -> str:
         token = secrets.token_urlsafe(32)
-        with self.connect() as conn:
-            conn.execute(
-                "INSERT INTO sessions (token, user_id, created_at) VALUES (?, ?, ?)",
-                (token, user_id, _now()),
-            )
+        self.sessions.insert_one(
+            {"_id": token, "user_id": user_id, "created_at": _now()}
+        )
         return token
 
     def user_for_session(self, token: str) -> dict | None:
         if not token:
             return None
-        with self.connect() as conn:
-            row = conn.execute(
-                "SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id"
-                " WHERE s.token = ?",
-                (token,),
-            ).fetchone()
-        return dict(row) if row else None
+        session = self.sessions.find_one({"_id": token})
+        if session is None:
+            return None
+        user = self.users.find_one({"_id": session["user_id"]})
+        return {"id": user["_id"], "email": user["email"]} if user else None
 
     def delete_session(self, token: str) -> None:
-        with self.connect() as conn:
-            conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        self.sessions.delete_one({"_id": token})
 
-    # --- accounts --------------------------------------------------------
+    # --- accounts ---------------------------------------------------------
 
     def save_account(
         self,
@@ -273,83 +234,67 @@ class Store:
         expires_at: str | None = None,
         extra: dict | None = None,
     ) -> None:
-        with self.connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO accounts (user_id, platform, external_id, display_name,
-                                      access_token, refresh_token, expires_at,
-                                      extra, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(user_id, platform) DO UPDATE SET
-                    external_id = excluded.external_id,
-                    display_name = excluded.display_name,
-                    access_token = excluded.access_token,
-                    refresh_token = COALESCE(excluded.refresh_token, accounts.refresh_token),
-                    expires_at = excluded.expires_at,
-                    extra = excluded.extra,
-                    updated_at = excluded.updated_at
-                """,
-                (
-                    user_id,
-                    self._account_key(platform),
-                    external_id,
-                    display_name,
-                    self._encrypt(access_token),
-                    self._encrypt(refresh_token),
-                    expires_at,
-                    json.dumps(extra or {}),
-                    _now(),
-                ),
-            )
+        key = self._account_key(platform)
+        update = {
+            "user_id": user_id,
+            "platform": key,
+            "external_id": external_id,
+            "display_name": display_name,
+            "access_token": self._encrypt(access_token),
+            "expires_at": expires_at,
+            "extra": json.dumps(extra or {}),
+            "updated_at": _now(),
+        }
+        # A reconnect that returns no refresh token must not wipe the one we
+        # already hold — Google only issues it on the first consent.
+        encrypted_refresh = self._encrypt(refresh_token)
+        if encrypted_refresh is not None:
+            update["refresh_token"] = encrypted_refresh
+
+        if encrypted_refresh is not None:
+            # Writing it in $set and $setOnInsert at once is a conflicting path
+            # error, so only one of the two ever mentions refresh_token.
+            change = {"$set": {**update, "refresh_token": encrypted_refresh}}
+        else:
+            change = {"$set": update, "$setOnInsert": {"refresh_token": None}}
+
+        self.accounts.update_one({"_id": f"{user_id}:{key}"}, change, upsert=True)
 
     def get_account(self, user_id: str, platform: "Platform | str") -> dict | None:
-        with self.connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM accounts WHERE user_id = ? AND platform = ?",
-                (user_id, self._account_key(platform)),
-            ).fetchone()
-        if row is None:
+        doc = self.accounts.find_one(
+            {"_id": f"{user_id}:{self._account_key(platform)}"}
+        )
+        if doc is None:
             return None
         return {
-            "platform": row["platform"],
-            "external_id": row["external_id"],
-            "display_name": row["display_name"],
-            "access_token": self._decrypt(row["access_token"]),
-            "refresh_token": self._decrypt(row["refresh_token"]),
-            "expires_at": row["expires_at"],
-            "extra": json.loads(row["extra"] or "{}"),
+            "platform": doc["platform"],
+            "external_id": doc.get("external_id"),
+            "display_name": doc.get("display_name"),
+            "access_token": self._decrypt(doc.get("access_token")),
+            "refresh_token": self._decrypt(doc.get("refresh_token")),
+            "expires_at": doc.get("expires_at"),
+            "extra": json.loads(doc.get("extra") or "{}"),
         }
 
     def list_connections(self, user_id: str) -> list[dict]:
         """Connection status for the UI. Never returns token material."""
-        out = []
-        with self.connect() as conn:
-            rows = {
-                r["platform"]: r
-                for r in conn.execute(
-                    "SELECT * FROM accounts WHERE user_id = ?", (user_id,)
-                )
+        rows = {
+            doc["platform"]: doc for doc in self.accounts.find({"user_id": user_id})
+        }
+        return [
+            {
+                "platform": platform.value,
+                "connected": platform.value in rows,
+                "displayName": rows.get(platform.value, {}).get("display_name"),
+                "externalId": rows.get(platform.value, {}).get("external_id"),
             }
-        for platform in Platform:
-            row = rows.get(platform.value)
-            out.append(
-                {
-                    "platform": platform.value,
-                    "connected": row is not None,
-                    "displayName": row["display_name"] if row else None,
-                    "externalId": row["external_id"] if row else None,
-                }
-            )
-        return out
+            for platform in Platform
+        ]
 
     def delete_account(self, user_id: str, platform: "Platform | str") -> None:
-        with self.connect() as conn:
-            conn.execute(
-                "DELETE FROM accounts WHERE user_id = ? AND platform = ?",
-                (user_id, self._account_key(platform)),
-            )
+        self.accounts.delete_one({"_id": f"{user_id}:{self._account_key(platform)}"})
 
-    # --- posts ----------------------------------------------------------
+    # --- posts ------------------------------------------------------------
 
     def create_post(
         self,
@@ -370,60 +315,72 @@ class Store:
         """
         post_id = uuid.uuid4().hex
         now = _now()
-        with self.connect() as conn:
-            conn.execute(
-                "INSERT INTO posts (id, user_id, created_at, scheduled_at, title,"
-                " caption, filename, media_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    post_id,
-                    user_id,
-                    now,
-                    scheduled_at,
-                    title,
-                    caption,
-                    filename,
-                    str(media_path),
-                ),
-            )
-            conn.executemany(
-                "INSERT INTO post_targets (post_id, platform, state, updated_at)"
-                " VALUES (?, ?, ?, ?)",
-                [(post_id, p.value, TargetState.SCHEDULED.value, now) for p in targets],
+        self.posts.insert_one(
+            {
+                "_id": post_id,
+                "user_id": user_id,
+                "created_at": now,
+                "scheduled_at": scheduled_at,
+                "canceled_at": None,
+                "title": title,
+                "caption": caption,
+                "filename": filename,
+                "media_path": str(media_path),
+            }
+        )
+        if targets:
+            self.targets.insert_many(
+                [
+                    {
+                        "_id": f"{post_id}:{p.value}",
+                        "post_id": post_id,
+                        "platform": p.value,
+                        "state": TargetState.SCHEDULED.value,
+                        "url": None,
+                        "external_id": None,
+                        "error": None,
+                        "raw": None,
+                        "updated_at": now,
+                    }
+                    for p in targets
+                ]
             )
         return post_id
 
-    # --- scheduling -----------------------------------------------------
+    # --- scheduling -------------------------------------------------------
 
     def claim_due_targets(self, now_iso: str) -> list[tuple[str, Platform, str]]:
-        """Atomically move every due SCHEDULED target to PENDING and return it.
+        """Move every due SCHEDULED target to PENDING and return it.
 
-        Claiming inside the transaction is what stops a slow publish from
-        being picked up twice by the next scheduler tick.
+        Each flip is a single `find_one_and_update`, which MongoDB applies
+        atomically to one document. That is what stops a slow publish from
+        being picked up twice by the next scheduler tick: the second claim
+        matches nothing, because the state is no longer SCHEDULED.
         """
         claimed: list[tuple[str, Platform, str]] = []
-        with self.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT t.post_id, t.platform, p.user_id
-                  FROM post_targets t
-                  JOIN posts p ON p.id = t.post_id
-                 WHERE t.state = ?
-                   AND p.canceled_at IS NULL
-                   AND p.scheduled_at <= ?
-                 ORDER BY p.scheduled_at, t.platform
-                """,
-                (TargetState.SCHEDULED.value, now_iso),
-            ).fetchall()
+        due_posts = self.posts.find(
+            {"canceled_at": None, "scheduled_at": {"$lte": now_iso}}
+        ).sort("scheduled_at", ASCENDING)
 
-            for row in rows:
-                conn.execute(
-                    "UPDATE post_targets SET state = ?, updated_at = ?"
-                    " WHERE post_id = ? AND platform = ?",
-                    (TargetState.PENDING.value, _now(), row["post_id"], row["platform"]),
+        for post in due_posts:
+            targets = self.targets.find(
+                {"post_id": post["_id"], "state": TargetState.SCHEDULED.value}
+            ).sort("platform", ASCENDING)
+            for target in list(targets):
+                won = self.targets.find_one_and_update(
+                    {"_id": target["_id"], "state": TargetState.SCHEDULED.value},
+                    {
+                        "$set": {
+                            "state": TargetState.PENDING.value,
+                            "updated_at": _now(),
+                        }
+                    },
+                    return_document=ReturnDocument.AFTER,
                 )
-                claimed.append(
-                    (row["post_id"], Platform(row["platform"]), row["user_id"])
-                )
+                if won is not None:
+                    claimed.append(
+                        (post["_id"], Platform(target["platform"]), post["user_id"])
+                    )
         return claimed
 
     def cancel_post(self, post_id: str, user_id: str) -> int:
@@ -432,33 +389,23 @@ class Store:
         Anything already published, failed or in flight is left alone — you
         cannot unsend a video.
         """
-        with self.connect() as conn:
-            cursor = conn.execute(
-                "UPDATE post_targets SET state = ?, updated_at = ?"
-                " WHERE post_id = ? AND state = ?"
-                " AND post_id IN (SELECT id FROM posts WHERE user_id = ?)",
-                (
-                    TargetState.CANCELED.value,
-                    _now(),
-                    post_id,
-                    TargetState.SCHEDULED.value,
-                    user_id,
-                ),
-            )
-            canceled = cursor.rowcount
-            conn.execute(
-                "UPDATE posts SET canceled_at = ? WHERE id = ? AND user_id = ?",
-                (_now(), post_id, user_id),
-            )
+        if self.posts.find_one({"_id": post_id, "user_id": user_id}) is None:
+            return 0
+
+        canceled = self.targets.update_many(
+            {"post_id": post_id, "state": TargetState.SCHEDULED.value},
+            {"$set": {"state": TargetState.CANCELED.value, "updated_at": _now()}},
+        ).modified_count
+        self.posts.update_one(
+            {"_id": post_id, "user_id": user_id}, {"$set": {"canceled_at": _now()}}
+        )
         return canceled
 
     def reschedule_post(self, post_id: str, scheduled_at: str, user_id: str) -> None:
-        with self.connect() as conn:
-            conn.execute(
-                "UPDATE posts SET scheduled_at = ?, canceled_at = NULL"
-                " WHERE id = ? AND user_id = ?",
-                (scheduled_at, post_id, user_id),
-            )
+        self.posts.update_one(
+            {"_id": post_id, "user_id": user_id},
+            {"$set": {"scheduled_at": scheduled_at, "canceled_at": None}},
+        )
 
     def recover_interrupted(self) -> dict[str, int]:
         """Clean up after a process that died mid-publish.
@@ -469,105 +416,80 @@ class Store:
         automatically, because a silent duplicate upload is worse than a
         message asking you to check.
         """
-        with self.connect() as conn:
-            requeued = conn.execute(
-                "UPDATE post_targets SET state = ?, updated_at = ? WHERE state = ?",
-                (TargetState.SCHEDULED.value, _now(), TargetState.PENDING.value),
-            ).rowcount
-            interrupted = conn.execute(
-                """
-                UPDATE post_targets
-                   SET state = ?, error = ?, updated_at = ?
-                 WHERE state = ?
-                """,
-                (
-                    TargetState.FAILED.value,
-                    "Interrupted by a restart while uploading. Check the platform "
-                    "before retrying — the upload may have completed.",
-                    _now(),
-                    TargetState.UPLOADING.value,
-                ),
-            ).rowcount
+        requeued = self.targets.update_many(
+            {"state": TargetState.PENDING.value},
+            {"$set": {"state": TargetState.SCHEDULED.value, "updated_at": _now()}},
+        ).modified_count
+        interrupted = self.targets.update_many(
+            {"state": TargetState.UPLOADING.value},
+            {
+                "$set": {
+                    "state": TargetState.FAILED.value,
+                    "error": "Interrupted by a restart while uploading. Check the "
+                    "platform before retrying — the upload may have completed.",
+                    "updated_at": _now(),
+                }
+            },
+        ).modified_count
         return {"requeued": requeued, "interrupted": interrupted}
 
     def set_target_state(
         self, post_id: str, platform: Platform, state: TargetState
     ) -> None:
-        with self.connect() as conn:
-            conn.execute(
-                "UPDATE post_targets SET state = ?, updated_at = ?"
-                " WHERE post_id = ? AND platform = ?",
-                (state.value, _now(), post_id, platform.value),
-            )
+        self.targets.update_one(
+            {"_id": f"{post_id}:{platform.value}"},
+            {"$set": {"state": state.value, "updated_at": _now()}},
+        )
 
     def set_target_result(
         self, post_id: str, platform: Platform, result: PublishResult
     ) -> None:
-        with self.connect() as conn:
-            conn.execute(
-                """
-                UPDATE post_targets
-                   SET state = ?, url = ?, external_id = ?, error = ?, raw = ?,
-                       updated_at = ?
-                 WHERE post_id = ? AND platform = ?
-                """,
-                (
-                    result.state.value,
-                    result.url,
-                    result.external_id,
-                    result.error,
-                    result.raw,
-                    _now(),
-                    post_id,
-                    platform.value,
-                ),
-            )
+        self.targets.update_one(
+            {"_id": f"{post_id}:{platform.value}"},
+            {
+                "$set": {
+                    "state": result.state.value,
+                    "url": result.url,
+                    "external_id": result.external_id,
+                    "error": result.error,
+                    "raw": result.raw,
+                    "updated_at": _now(),
+                }
+            },
+        )
 
     def get_post(self, post_id: str, user_id: str | None = None) -> dict | None:
         """user_id=None skips the ownership check, for the publish worker,
         which has already resolved the owner from the claimed target."""
-        with self.connect() as conn:
-            if user_id is None:
-                post = conn.execute(
-                    "SELECT * FROM posts WHERE id = ?", (post_id,)
-                ).fetchone()
-            else:
-                post = conn.execute(
-                    "SELECT * FROM posts WHERE id = ? AND user_id = ?",
-                    (post_id, user_id),
-                ).fetchone()
-            if post is None:
-                return None
-            targets = conn.execute(
-                "SELECT * FROM post_targets WHERE post_id = ? ORDER BY platform",
-                (post_id,),
-            ).fetchall()
-        return _post_to_dict(post, targets)
+        query = {"_id": post_id}
+        if user_id is not None:
+            query["user_id"] = user_id
+        post = self.posts.find_one(query)
+        if post is None:
+            return None
+        return _post_to_dict(post, self._targets_for(post_id))
 
     def list_posts(self, user_id: str, limit: int = 25) -> list[dict]:
-        with self.connect() as conn:
-            posts = conn.execute(
-                "SELECT * FROM posts WHERE user_id = ?"
-                " ORDER BY created_at DESC LIMIT ?",
-                (user_id, limit),
-            ).fetchall()
-            out = []
-            for post in posts:
-                targets = conn.execute(
-                    "SELECT * FROM post_targets WHERE post_id = ? ORDER BY platform",
-                    (post["id"],),
-                ).fetchall()
-                out.append(_post_to_dict(post, targets))
-        return out
+        posts = (
+            self.posts.find({"user_id": user_id})
+            .sort("created_at", DESCENDING)
+            .limit(limit)
+        )
+        return [_post_to_dict(p, self._targets_for(p["_id"])) for p in posts]
+
+    def _targets_for(self, post_id: str) -> list[dict]:
+        return list(
+            self.targets.find({"post_id": post_id}).sort("platform", ASCENDING)
+        )
 
 
-def _post_to_dict(post: sqlite3.Row, targets: list[sqlite3.Row]) -> dict:
+def _post_to_dict(post: dict, targets: list[dict]) -> dict:
     return {
-        "id": post["id"],
+        "id": post["_id"],
         "userId": post["user_id"],
         "createdAt": post["created_at"],
         "scheduledAt": post["scheduled_at"],
-        "canceledAt": post["canceled_at"],
+        "canceledAt": post.get("canceled_at"),
         "title": post["title"],
         "caption": post["caption"],
         "filename": post["filename"],
@@ -576,9 +498,9 @@ def _post_to_dict(post: sqlite3.Row, targets: list[sqlite3.Row]) -> dict:
             {
                 "platform": t["platform"],
                 "state": t["state"],
-                "url": t["url"],
-                "externalId": t["external_id"],
-                "error": t["error"],
+                "url": t.get("url"),
+                "externalId": t.get("external_id"),
+                "error": t.get("error"),
                 "updatedAt": t["updated_at"],
             }
             for t in targets

@@ -9,6 +9,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
+import mongomock
 from cryptography.fernet import Fernet
 
 from app.config import Settings
@@ -26,7 +27,7 @@ def iso(moment: datetime) -> str:
 
 @pytest.fixture
 def store(tmp_path) -> Store:
-    return Store(tmp_path / "sched.sqlite3", Fernet.generate_key().decode())
+    return Store("mongodb://test", "test", Fernet.generate_key().decode(), client=mongomock.MongoClient())
 
 
 @pytest.fixture
