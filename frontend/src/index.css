@@ -1,0 +1,1312 @@
+/* ==========================================================================
+   Cross Post — Studio
+   Dark only. Neutral graphite ramp, one off-white accent, and the three brand
+   colours as the single source of hue on the page.
+
+   Every length here is a multiple of 4px. Hierarchy comes from size, colour
+   and surface steps — never from weight, glow or gradient.
+   ========================================================================== */
+
+:root {
+  /* surfaces, back to front */
+  --sunken: #0f0f10;
+  --bg: #141415;
+  --card: #19191b;
+  --raised: #232325;
+  --raised-hover: #2a2a2d;
+
+  /* hairlines: primary text at low opacity, so they sit in the ramp */
+  --line: rgba(237, 237, 237, 0.08);
+  --line-strong: rgba(237, 237, 237, 0.16);
+
+  /* three text roles, no more */
+  --text: #ededed;
+  --text-2: #a1a1a6;
+  --text-3: #85858b;
+
+  /* the accent is off-white. Colour on this page belongs to the platforms. */
+  --accent: #ededed;
+
+  --ok: #4cc38a;
+  --warn: #d9a441;
+  --err: #e5484d;
+
+  --yt: #ff3b30;
+  --ig: #e1306c;
+  --fb: #3b8ef5;
+
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r: 10px;
+  --r-lg: 14px;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --font: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
+
+  color-scheme: dark;
+  font-family: var(--font);
+  font-synthesis-weight: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+::selection {
+  background: rgba(237, 237, 237, 0.18);
+}
+
+:focus-visible {
+  outline: 2px solid var(--text-2);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* Figures, timestamps and counts are set in mono and aligned, so numbers that
+   change in place do not shuffle the text around them. */
+.mono,
+.counter,
+.chip,
+.post-when,
+.conn-row .sub,
+.page-list .sub,
+.progress span,
+.rail-time {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Top bar
+   -------------------------------------------------------------------------- */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  height: 64px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.topbar-inner {
+  height: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.brand-mark {
+  display: block;
+  flex: none;
+  border-radius: var(--r-sm);
+}
+
+.brand-name {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.brand-tag {
+  display: block;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-3);
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--card);
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* The only looping motion on the page, and only while something is genuinely
+   in flight. */
+.pulse {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+
+.pulse.live {
+  background: var(--ok);
+}
+
+.pulse.busy {
+  background: var(--warn);
+  animation: breathe 1.6s var(--ease) infinite;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Sign in / sign up, and the connect step
+   -------------------------------------------------------------------------- */
+
+.auth {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  padding: 32px;
+  display: grid;
+  gap: 24px;
+}
+
+.auth-head {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.auth-head img {
+  border-radius: var(--r-sm);
+}
+
+.auth-head h1 {
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.auth-head p {
+  margin: 0;
+  max-width: 30ch;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-3);
+}
+
+.auth-switch {
+  justify-self: stretch;
+}
+
+.auth-switch button {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.auth-form {
+  display: grid;
+  gap: 20px;
+}
+
+.connect {
+  min-height: 100vh;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  padding: 64px 24px;
+}
+
+.connect-inner {
+  width: 100%;
+  max-width: 420px;
+  display: grid;
+  gap: 20px;
+}
+
+.connect-head {
+  display: grid;
+  gap: 8px;
+}
+
+.connect-head h1 {
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.connect-head p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-3);
+}
+
+/* The signed-in email and the sign-out button, beside the status pill. */
+.bar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.who {
+  font-size: 13px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+@media (max-width: 560px) {
+  .who {
+    display: none;
+  }
+
+  .connect {
+    padding: 32px 16px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Layout
+   -------------------------------------------------------------------------- */
+
+.layout {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 32px 32px 96px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+  align-items: start;
+}
+
+.col-main,
+.col-side {
+  display: grid;
+  gap: 24px;
+  align-content: start;
+  min-width: 0;
+}
+
+/* .col-side is deliberately not sticky: the Setup card can grow taller than
+   the viewport, and a sticky element taller than the screen strands its own
+   overflow where you can never scroll to it. */
+
+@media (max-width: 920px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding: 20px 16px 64px;
+  }
+
+  .topbar-inner {
+    padding: 0 16px;
+  }
+
+  /* The tagline wraps to two lines on a phone and pushes the bar past its
+     own height, so it goes. The wordmark says enough. */
+  .brand-tag {
+    display: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Cards
+   -------------------------------------------------------------------------- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 48px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.card-body {
+  padding: 20px;
+  display: grid;
+  gap: 20px;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 0 4px;
+}
+
+.section-title {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.count {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.muted {
+  color: var(--text-2);
+}
+
+.hint {
+  display: block;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-3);
+}
+
+/* --------------------------------------------------------------------------
+   Alerts
+   -------------------------------------------------------------------------- */
+
+.alert {
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--card);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-2);
+}
+
+.alert-ok {
+  border-color: rgba(76, 195, 138, 0.28);
+  color: var(--text);
+}
+
+.alert-err {
+  border-color: rgba(229, 72, 77, 0.32);
+  color: var(--text);
+}
+
+/* --------------------------------------------------------------------------
+   Toasts — transient notices, bottom right, over the page
+   -------------------------------------------------------------------------- */
+
+.toasts {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 30;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+  pointer-events: none;
+}
+
+.toast {
+  pointer-events: auto;
+  max-width: 360px;
+  padding: 12px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: var(--raised);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 18px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  animation: toast-in 200ms var(--ease);
+}
+
+.toast.ok {
+  border-color: rgba(76, 195, 138, 0.4);
+}
+
+.toast.err {
+  border-color: rgba(229, 72, 77, 0.45);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (max-width: 560px) {
+  .toasts {
+    right: 16px;
+    left: 16px;
+    bottom: 16px;
+    justify-items: stretch;
+  }
+
+  .toast {
+    max-width: none;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   Setup list
+   -------------------------------------------------------------------------- */
+
+.setup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.setup-list li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-2);
+}
+
+.setup-list .ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  color: var(--text-3);
+}
+
+.setup-list .blocker .ico {
+  color: var(--err);
+}
+
+.setup-list .warning .ico {
+  color: var(--warn);
+}
+
+.setup-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.setup-list .lead {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.setup-list .detail {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.setup-list code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* --------------------------------------------------------------------------
+   Buttons
+   -------------------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: var(--raised);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  font-weight: 450;
+  cursor: pointer;
+  transition:
+    background 140ms var(--ease),
+    border-color 140ms var(--ease),
+    color 140ms var(--ease),
+    transform 140ms var(--ease);
+}
+
+.btn:hover:not(:disabled):not(.disabled) {
+  background: var(--raised-hover);
+}
+
+.btn:active:not(:disabled):not(.disabled) {
+  transform: scale(0.98);
+}
+
+/* Primary is an off white with dark text, which on this ramp reads as the
+   strongest thing on the page without introducing a hue. */
+.btn-primary {
+  height: 44px;
+  padding: 0 20px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #141415;
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #fff;
+  border-color: #fff;
+}
+
+.btn-ghost {
+  background: transparent;
+  border-color: var(--line-strong);
+  color: var(--text-2);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--raised);
+  color: var(--text);
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-sm {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* Unavailable is a surface step, not a fade: a faded filled button loses its
+   own contrast exactly when it is trying to say it cannot be used. */
+.btn:disabled,
+.btn.disabled {
+  background: var(--raised);
+  border-color: var(--line);
+  color: var(--text-3);
+  box-shadow: none;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   Connections
+   -------------------------------------------------------------------------- */
+
+.conn-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.conn-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 48px;
+}
+
+.conn-row + .conn-row {
+  border-top: 1px solid var(--line);
+}
+
+.conn-row .meta {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+
+.conn-row .name {
+  font-size: 13px;
+}
+
+.conn-row .sub {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conn-row .sub.ok {
+  color: var(--ok);
+}
+
+/* A disconnected account keeps its glyph but loses its colour, the same rule
+   the platform picker follows: colour on this page means live. */
+.conn-row.off .pf.pf-youtube,
+.conn-row.off .pf.pf-instagram,
+.conn-row.off .pf.pf-facebook {
+  color: var(--text-3);
+}
+
+.stack {
+  display: grid;
+  gap: 8px;
+}
+
+.page-picker {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--sunken);
+  display: grid;
+  gap: 12px;
+}
+
+.page-picker h3 {
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.page-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.page-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.page-list .meta {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.page-list .sub {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* --------------------------------------------------------------------------
+   Platform glyphs — the only hue in the interface
+   -------------------------------------------------------------------------- */
+
+.pf {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--raised);
+}
+
+.pf svg {
+  width: 16px;
+  height: 16px;
+}
+
+.pf-youtube {
+  color: var(--yt);
+}
+
+.pf-instagram {
+  color: var(--ig);
+}
+
+.pf-facebook {
+  color: var(--fb);
+}
+
+.pf-sm {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  background: none;
+}
+
+/* --------------------------------------------------------------------------
+   Form fields
+   -------------------------------------------------------------------------- */
+
+.field {
+  display: grid;
+  gap: 8px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+
+.counter {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.counter.over {
+  color: var(--warn);
+}
+
+.input,
+.textarea,
+.datetime {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--sunken);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 20px;
+  transition: border-color 140ms var(--ease);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--text-3);
+}
+
+.input:focus,
+.textarea:focus,
+.datetime:focus {
+  outline: none;
+  border-color: var(--text-3);
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 88px;
+}
+
+.datetime {
+  font-family: var(--mono);
+  font-size: 13px;
+  width: auto;
+  max-width: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   Dropzone and preview — the lit moment on the page
+   -------------------------------------------------------------------------- */
+
+.dropzone {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 32px 20px;
+  text-align: center;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r);
+  background: var(--sunken);
+  transition:
+    border-color 140ms var(--ease),
+    background 140ms var(--ease);
+}
+
+.dropzone:hover,
+.dropzone.dragging {
+  border-color: var(--text-3);
+  background: var(--raised);
+}
+
+.dropzone input[type="file"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.dropzone .icon {
+  display: inline-flex;
+  margin-bottom: 4px;
+  color: var(--text-3);
+}
+
+.dropzone .primary-text {
+  font-size: 14px;
+}
+
+.dropzone .secondary-text {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-3);
+  max-width: 36ch;
+}
+
+.preview {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--sunken);
+}
+
+/* A real 9:16 frame, lit against the darkest surface on the page. */
+.preview video {
+  width: 72px;
+  height: 128px;
+  flex: none;
+  object-fit: cover;
+  background: #000;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+}
+
+.preview-meta {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.preview-name {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-xs);
+  background: var(--card);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.chip.good {
+  color: var(--ok);
+  border-color: rgba(76, 195, 138, 0.28);
+}
+
+/* --------------------------------------------------------------------------
+   Segmented control and platform toggles
+   -------------------------------------------------------------------------- */
+
+.segmented {
+  display: inline-flex;
+  justify-self: start;
+  padding: 4px;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--sunken);
+}
+
+.segmented button {
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  font-family: var(--font);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background 140ms var(--ease),
+    color 140ms var(--ease);
+}
+
+.segmented button:hover {
+  color: var(--text);
+}
+
+.segmented button[aria-pressed="true"] {
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.pf-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pf-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--sunken);
+  color: var(--text-3);
+  font-size: 13px;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background 140ms var(--ease),
+    border-color 140ms var(--ease),
+    color 140ms var(--ease);
+}
+
+.pf-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.pf-toggle:hover {
+  color: var(--text-2);
+}
+
+/* Selected is a surface step plus the brand colour arriving in the glyph. */
+.pf-toggle.on {
+  background: var(--raised);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.pf-toggle .pf {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  transition: color 140ms var(--ease);
+}
+
+.pf-toggle.on .pf.pf-youtube {
+  color: var(--yt);
+}
+
+.pf-toggle.on .pf.pf-instagram {
+  color: var(--ig);
+}
+
+.pf-toggle.on .pf.pf-facebook {
+  color: var(--fb);
+}
+
+.pf-toggle:has(input:focus-visible) {
+  outline: 2px solid var(--text-2);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Progress and problems
+   -------------------------------------------------------------------------- */
+
+.progress {
+  display: grid;
+  gap: 8px;
+}
+
+.progress .bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text);
+  transition: width 200ms linear;
+}
+
+.progress span {
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.problem-list {
+  list-style: none;
+  margin: 0;
+  padding: 12px 16px;
+  display: grid;
+  gap: 8px;
+  border: 1px solid rgba(229, 72, 77, 0.32);
+  border-radius: var(--r);
+  background: var(--sunken);
+}
+
+.problem-list li {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-2);
+}
+
+.problem-list code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.warning-text {
+  display: block;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--warn);
+}
+
+/* --------------------------------------------------------------------------
+   Posts
+   -------------------------------------------------------------------------- */
+
+.post {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+
+.post + .post {
+  margin-top: 12px;
+}
+
+.post.upcoming {
+  border-color: var(--line-strong);
+}
+
+.post-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.post-title {
+  font-size: 14px;
+  font-weight: 450;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.post-when {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex: none;
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.post-when .relative {
+  color: var(--text-2);
+}
+
+@media (max-width: 560px) {
+  .post-head {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .post-title {
+    flex: 1 1 100%;
+  }
+
+  .post-when {
+    flex: 1;
+  }
+}
+
+.target-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.target-list li {
+  padding: 12px 20px;
+}
+
+.target-list li + li {
+  border-top: 1px solid var(--line);
+}
+
+.target-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 28px;
+}
+
+.target-name {
+  font-size: 13px;
+}
+
+.target-main .spacer {
+  flex: 1;
+}
+
+.target-error {
+  margin: 8px 0 0;
+  padding-left: 28px;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--text-3);
+}
+
+/* --------------------------------------------------------------------------
+   Badges — an icon and a word, in the colour of the state
+   -------------------------------------------------------------------------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--raised);
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.badge svg {
+  flex: none;
+}
+
+.badge.done {
+  color: var(--ok);
+  border-color: rgba(76, 195, 138, 0.28);
+}
+
+.badge.failed {
+  color: var(--err);
+  border-color: rgba(229, 72, 77, 0.32);
+}
+
+.badge.not_configured {
+  color: var(--warn);
+  border-color: rgba(217, 164, 65, 0.3);
+}
+
+.badge.scheduled,
+.badge.pending,
+.badge.uploading,
+.badge.processing {
+  color: var(--text);
+}
+
+.badge.canceled {
+  color: var(--text-3);
+}
+
+/* --------------------------------------------------------------------------
+   Empty and loading
+   -------------------------------------------------------------------------- */
+
+.empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 48px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--card);
+}
+
+.empty .icon {
+  display: inline-flex;
+  color: var(--text-3);
+}
+
+.empty p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.skeleton {
+  height: 420px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--card);
+  opacity: 0.6;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
