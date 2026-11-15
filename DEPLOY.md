@@ -285,9 +285,6 @@ Each step depends on the one above, so a failure tells you where to look.
 
 - **R2 is not built.** Until it is, videos live on the Render filesystem and
   need a paid disk to survive a deploy.
-- **`ffprobe` is not on Render's Python runtime**, so server-side codec
-  validation downgrades to the browser-side check. The Setup card says so.
-  Fixing it means deploying from a Dockerfile that installs ffmpeg.
 - **The session cookie is `secure=False`** so that localhost works. In
   production it should be `True` — one line in
   `backend/app/routers/session.py`, ideally driven by an env var.

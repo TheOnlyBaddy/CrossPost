@@ -109,6 +109,16 @@ export default function App() {
         ? { tone: "live", text: `${upcoming.length} scheduled` }
         : { tone: "live", text: "Ready" };
 
+  // Rendered by every branch below. An OAuth failure comes back to the login
+  // screen, and that screen used to return before the toast layer, so the
+  // error was invisible exactly when it mattered.
+  const toasts = (
+    <div className="toasts" role="status" aria-live="polite">
+      {flash && <div className="toast ok">{flash}</div>}
+      {error && <div className="toast err">{error}</div>}
+    </div>
+  );
+
   if (health === null) {
     // An endless skeleton is indistinguishable from a blank page, and this is
     // exactly when something is wrong, so say what.
@@ -135,22 +145,28 @@ export default function App() {
 
   if (health.user === null) {
     return (
-      <AuthPage onSignedIn={() => void refresh()} setup={health.setup} />
+      <>
+        <AuthPage onSignedIn={() => void refresh()} setup={health.setup} />
+        {toasts}
+      </>
     );
   }
 
   const anyConnected = health.connections.some((c) => c.connected);
   if (!anyConnected && !skippedConnect) {
     return (
-      <ConnectPage
-        health={health}
-        showPagePicker={showPagePicker}
-        onChanged={() => {
-          setShowPagePicker(false);
-          void refresh();
-        }}
-        onSkip={() => setSkippedConnect(true)}
-      />
+      <>
+        <ConnectPage
+          health={health}
+          showPagePicker={showPagePicker}
+          onChanged={() => {
+            setShowPagePicker(false);
+            void refresh();
+          }}
+          onSkip={() => setSkippedConnect(true)}
+        />
+        {toasts}
+      </>
     );
   }
 
@@ -241,10 +257,7 @@ export default function App() {
         </aside>
       </main>
 
-      <div className="toasts" role="status" aria-live="polite">
-        {flash && <div className="toast ok">{flash}</div>}
-        {error && <div className="toast err">{error}</div>}
-      </div>
+      {toasts}
     </>
   );
 }
