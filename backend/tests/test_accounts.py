@@ -212,3 +212,80 @@ class TestAdoption:
         second = store.create_user("second@example.com", "x")
         assert store.adopt_unowned_accounts(second) == 0
         assert store.get_account(second, Platform.YOUTUBE) is None
+
+
+class TestSocialLogin:
+    """The redirect the provider gets, and the account the callback lands in.
+
+    The round trip itself needs Google or Meta, so what is checked here is
+    everything on this side of it.
+    """
+
+    def test_google_start_asks_for_identity_not_upload_rights(
+        self, anon_client, monkeypatch
+    ):
+        from urllib.parse import parse_qs, urlparse
+
+        from app.config import get_settings
+
+        monkeypatch.setenv("GOOGLE_CLIENT_ID", "gid")
+        monkeypatch.setenv("GOOGLE_CLIENT_SECRET", "gsecret")
+        get_settings.cache_clear()
+        try:
+            response = anon_client.get("/api/login/google", follow_redirects=False)
+            query = parse_qs(urlparse(response.headers["location"]).query)
+        finally:
+            get_settings.cache_clear()
+
+        assert query["scope"][0] == "openid email profile"
+        assert "youtube" not in query["scope"][0]
+        assert query["redirect_uri"][0].endswith("/api/login/google/callback")
+
+    def test_sign_in_is_offered_without_a_session(self, anon_client):
+        """It is the login page: requiring a session would be circular."""
+        response = anon_client.get("/api/login/google", follow_redirects=False)
+        assert response.status_code in (307, 302)
+
+    def test_unconfigured_provider_explains_itself(self, anon_client):
+        """With no credentials it bounces back to the UI with a message rather
+        than sending the user to a broken consent screen."""
+        response = anon_client.get("/api/login/meta", follow_redirects=False)
+        assert "META_APP_ID" in response.headers["location"]
+
+    def test_a_social_account_has_no_usable_password(self, tmp_path):
+        from cryptography.fernet import Fernet
+
+        from app.passwords import UNUSABLE_PASSWORD, verify_password
+        from app.store import Store
+
+        store = Store(tmp_path / "social.sqlite3", Fernet.generate_key().decode())
+        store.create_user("viagoogle@example.com", UNUSABLE_PASSWORD)
+
+        user = store.get_user_by_email("viagoogle@example.com")
+        assert not verify_password("", user["password_hash"])
+        assert not verify_password(UNUSABLE_PASSWORD, user["password_hash"])
+        assert not verify_password("password", user["password_hash"])
+
+    def test_signing_in_twice_reuses_the_same_account(self, tmp_path):
+        """Matching on the verified email is what makes Google and Facebook
+        land in one account rather than two."""
+        from cryptography.fernet import Fernet
+
+        from app.passwords import UNUSABLE_PASSWORD
+        from app.store import Store
+
+        store = Store(tmp_path / "same.sqlite3", Fernet.generate_key().decode())
+        first = store.create_user("both@example.com", UNUSABLE_PASSWORD)
+
+        assert store.create_user("both@example.com", UNUSABLE_PASSWORD) is None
+        assert store.get_user_by_email("both@example.com")["id"] == first
+
+    def test_email_match_ignores_case(self, tmp_path):
+        from cryptography.fernet import Fernet
+
+        from app.passwords import UNUSABLE_PASSWORD
+        from app.store import Store
+
+        store = Store(tmp_path / "case.sqlite3", Fernet.generate_key().decode())
+        user_id = store.create_user("Mixed@Example.com", UNUSABLE_PASSWORD)
+        assert store.get_user_by_email("mixed@example.com")["id"] == user_id

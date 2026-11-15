@@ -1,12 +1,19 @@
 import { useState } from "react";
 
 import { ApiError, logIn, signUp } from "../api";
+import { GoogleIcon, PlatformIcon } from "./icons";
 
 /**
  * Sign in or create an account. One form, two modes — they ask for the same
  * two things, so a second page would only be a second place to get lost in.
  */
-export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
+export function AuthPage({
+  onSignedIn,
+  setup,
+}: {
+  onSignedIn: () => void;
+  setup: { youtubeCredentials: boolean; metaCredentials: boolean };
+}) {
   const [mode, setMode] = useState<"in" | "up">("in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -63,6 +70,25 @@ export function AuthPage({ onSignedIn }: { onSignedIn: () => void }) {
             Create account
           </button>
         </div>
+
+        <div className="stack">
+          <a
+            className={`btn btn-block ${setup.youtubeCredentials ? "" : "disabled"}`}
+            href={setup.youtubeCredentials ? "/api/login/google" : undefined}
+          >
+            <GoogleIcon />
+            Continue with Google
+          </a>
+          <a
+            className={`btn btn-block ${setup.metaCredentials ? "" : "disabled"}`}
+            href={setup.metaCredentials ? "/api/login/meta" : undefined}
+          >
+            <PlatformIcon platform="facebook" small />
+            Continue with Facebook
+          </a>
+        </div>
+
+        <div className="or">or</div>
 
         <form className="auth-form" onSubmit={submit}>
           <label className="field">

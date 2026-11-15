@@ -49,13 +49,16 @@ export default function App() {
     const connected = params.get("connected");
     const oauthError = params.get("error");
 
+    const signedIn = params.get("signedIn");
+    if (signedIn) setFlash(`Signed in with ${signedIn}`);
+
     if (connected) {
       setFlash(`Connected ${connected}.`);
       if (params.get("next") === "choose-page") setShowPagePicker(true);
     }
     if (oauthError) setError(oauthError);
 
-    if (connected || oauthError) {
+    if (connected || oauthError || signedIn) {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
@@ -115,7 +118,9 @@ export default function App() {
   }
 
   if (health.user === null) {
-    return <AuthPage onSignedIn={() => void refresh()} />;
+    return (
+      <AuthPage onSignedIn={() => void refresh()} setup={health.setup} />
+    );
   }
 
   const anyConnected = health.connections.some((c) => c.connected);

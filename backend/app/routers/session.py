@@ -27,7 +27,7 @@ class Credentials(BaseModel):
     password: str
 
 
-def _set_cookie(response: Response, token: str) -> None:
+def set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         SESSION_COOKIE,
         token,
@@ -59,7 +59,7 @@ def sign_up(body: Credentials, response: Response) -> dict:
     # Connections made before sign-up existed belong to whoever arrives first.
     store.adopt_unowned_accounts(user_id)
 
-    _set_cookie(response, store.create_session(user_id))
+    set_session_cookie(response, store.create_session(user_id))
     return {"id": user_id, "email": email}
 
 
@@ -72,7 +72,7 @@ def log_in(body: Credentials, response: Response) -> dict:
         # emails have accounts.
         raise HTTPException(401, "Wrong email or password")
 
-    _set_cookie(response, store.create_session(user["id"]))
+    set_session_cookie(response, store.create_session(user["id"]))
     return {"id": user["id"], "email": user["email"]}
 
 

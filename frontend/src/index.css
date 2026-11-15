@@ -249,6 +249,24 @@ a {
   gap: 20px;
 }
 
+/* A rule with the word sitting in it, so the two ways in read as alternatives
+   rather than a stack of buttons. */
+.or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.or::before,
+.or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
 .connect {
   min-height: 100vh;
   display: grid;

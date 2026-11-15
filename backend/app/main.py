@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .deps import get_scheduler, get_store
-from .routers import auth, posts, session
+from .routers import auth, posts, session, social_login
 from .validation import (
     MAX_CAPTION_CHARS,
     MAX_DURATION_S,
@@ -52,6 +52,7 @@ app.mount("/media", StaticFiles(directory=settings.media_dir), name="media")
 app.include_router(auth.router)
 app.include_router(posts.router)
 app.include_router(session.router)
+app.include_router(social_login.router)
 
 
 @app.get("/api/health")

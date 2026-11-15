@@ -15,6 +15,12 @@ _P = 1
 _DK_LEN = 32
 
 
+# Accounts created through Google or Facebook have no password. This goes in
+# the column instead: verify_password rejects it because it is not a scrypt
+# record, so there is no password to guess.
+UNUSABLE_PASSWORD = "!"
+
+
 def hash_password(password: str) -> str:
     salt = secrets.token_bytes(16)
     digest = hashlib.scrypt(
