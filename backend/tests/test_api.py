@@ -166,3 +166,18 @@ class TestPendingMetaConnection:
 
     def test_anonymous_health_never_reports_a_pending_meta_login(self, anon_client):
         assert anon_client.get("/api/health").json()["metaUserConnected"] is False
+
+
+class TestSecretsStayOutOfLogs:
+    """The Meta token endpoints take the app secret as a query parameter, and
+    httpx logs whole URLs at INFO. That combination puts the secret in the
+    platform's log on every connect."""
+
+    def test_httpx_request_logging_is_silenced(self):
+        import logging
+
+        import app.main  # noqa: F401 - importing is what configures logging
+
+        logger = logging.getLogger("httpx")
+        assert not logger.isEnabledFor(logging.INFO)
+        assert logger.isEnabledFor(logging.WARNING)

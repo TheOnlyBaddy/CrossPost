@@ -20,6 +20,12 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s: %(message)s"
 )
 
+# httpx logs the full request URL at INFO, and the OAuth token endpoints take
+# the client secret, the authorization code and access tokens as query
+# parameters. At INFO that writes all three into the platform's log, which is
+# readable by anyone with dashboard access and retained for weeks.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 settings = get_settings()
 settings.ensure_dirs()
 
