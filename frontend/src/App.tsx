@@ -152,13 +152,22 @@ export default function App() {
     );
   }
 
+  // A Meta login with no Page chosen leaves the picker as the only way
+  // forward, so show it whenever that is where the user is — not only on the
+  // one render straight after the redirect.
+  const facebookConnected = health.connections.some(
+    (c) => c.platform === "facebook" && c.connected,
+  );
+  const needsPage = health.metaUserConnected && !facebookConnected;
+  const pagePickerOpen = showPagePicker || needsPage;
+
   const anyConnected = health.connections.some((c) => c.connected);
   if (!anyConnected && !skippedConnect) {
     return (
       <>
         <ConnectPage
           health={health}
-          showPagePicker={showPagePicker}
+          showPagePicker={pagePickerOpen}
           onChanged={() => {
             setShowPagePicker(false);
             void refresh();
@@ -247,7 +256,7 @@ export default function App() {
         <aside className="col-side">
           <Connections
             health={health}
-            showPagePicker={showPagePicker}
+            showPagePicker={pagePickerOpen}
             onChanged={() => {
               setShowPagePicker(false);
               void refresh();

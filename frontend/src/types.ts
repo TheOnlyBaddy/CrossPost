@@ -78,6 +78,8 @@ export interface Health {
   ok: boolean;
   /** null until signed in. Everything below `connections` is per user. */
   user: User | null;
+  /** Signed in to Meta, but no Page chosen yet, so nothing is publishable. */
+  metaUserConnected: boolean;
   setup: {
     youtubeCredentials: boolean;
     metaCredentials: boolean;

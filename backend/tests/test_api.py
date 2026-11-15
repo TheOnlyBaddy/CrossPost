@@ -135,3 +135,34 @@ class TestMetaStart:
 
     def test_start_is_refused_without_credentials(self, client):
         assert client.get("/api/auth/meta/start").status_code == 400
+
+
+class TestPendingMetaConnection:
+    """A Meta login stops at the Page picker. Health has to say so, or the
+    half-finished state disappears on the next reload."""
+
+    def test_health_reports_no_pending_meta_by_default(self, client):
+        assert client.get("/api/health").json()["metaUserConnected"] is False
+
+    def test_health_reports_a_meta_login_awaiting_its_page(self, client):
+        from app.deps import get_store
+
+        user_id = client.get("/api/session").json()["id"]
+        store = get_store()
+        store.save_account(
+            user_id,
+            "meta_user",
+            external_id=None,
+            display_name=None,
+            access_token="interim-user-token",
+        )
+        try:
+            body = client.get("/api/health").json()
+            assert body["metaUserConnected"] is True
+            # Still not publishable: no Page has been chosen.
+            assert all(not c["connected"] for c in body["connections"])
+        finally:
+            store.delete_account(user_id, "meta_user")
+
+    def test_anonymous_health_never_reports_a_pending_meta_login(self, anon_client):
+        assert anon_client.get("/api/health").json()["metaUserConnected"] is False

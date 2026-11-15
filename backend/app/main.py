@@ -64,6 +64,11 @@ def health(crosspost_session: str | None = Cookie(default=None)) -> dict:
     """
     store = get_store()
     user = store.user_for_session(crosspost_session or "")
+    # A Meta login that has not reached the Page picker yet. Without this the
+    # half-finished state is invisible after a reload, and unrecoverable.
+    meta_pending = (
+        user is not None and store.get_account(user["id"], "meta_user") is not None
+    )
     public_is_https = settings.public_base_url.startswith("https://")
     return {
         "ok": True,
@@ -80,6 +85,7 @@ def health(crosspost_session: str | None = Cookie(default=None)) -> dict:
             "schedulerMaxCatchupMinutes": settings.scheduler_max_catchup_minutes,
         },
         "user": {"id": user["id"], "email": user["email"]} if user else None,
+        "metaUserConnected": meta_pending,
         "connections": store.list_connections(user["id"]) if user else [],
         "limits": {
             "maxDurationSeconds": MAX_DURATION_S,
